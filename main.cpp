@@ -29,11 +29,6 @@
 #include <array>
 #include <unordered_map>
 
-// Project to learn and set up a graphics engine using vulkan and C++
-// 
-// Following from tutorial:
-// https://github.com/Overv/VulkanTutorial
-
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
@@ -102,6 +97,48 @@ struct Vertex {
     }
 };
 
+struct QueueFamilyIndices {
+    std::optional<uint32_t> graphicsFamily;
+    std::optional<uint32_t> presentFamily;
+
+    bool isComplete() {
+        return graphicsFamily.has_value() && presentFamily.has_value();
+    }
+};
+
+struct Camera {
+    glm::vec3 pos;
+    glm::vec3 front;
+    glm::vec3 up;
+    float yaw, pitch;
+
+    Camera(glm::vec3 startPos) {
+        pos = startPos;
+        front = glm::vec3(0.0f, 0.0f, -1.0f);
+        up = glm::vec3(0.0f, 1.0f, 0.0f);
+        yaw = -90.0f;
+        pitch = 0.0f;
+    }
+
+    glm::mat4 getViewMatrix() {
+        return glm::lookAt(pos, pos + front, up);
+    }
+
+    static Camera* create() {
+		return new Camera(glm::vec3(0.0f, 0.0f, 3.0f));
+	}
+
+    static void destroy(Camera* cam) {
+        free(cam);
+    }
+};
+
+#ifdef NDEBUG
+const bool enableValidationLayers = false;
+#else
+const bool enableValidationLayers = true;
+#endif
+
 namespace std {
     template<> struct hash<Vertex> {
         size_t operator()(Vertex const& vertex) const {
@@ -109,12 +146,6 @@ namespace std {
         }
     };
 }
-
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
-#endif
 
 // Debug Utils functions
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
@@ -133,16 +164,7 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
     }
 }
 
-struct QueueFamilyIndices {
-    std::optional<uint32_t> graphicsFamily;
-    std::optional<uint32_t> presentFamily;
-
-    bool isComplete() {
-        return graphicsFamily.has_value() && presentFamily.has_value();
-    }
-};
-
-class HelloTriangleApplication {
+class App {
 public:
     void run() {
         initWindow();
@@ -200,8 +222,21 @@ private:
     VkImage colorImage;
     VkDeviceMemory colorImageMemory;
     VkImageView colorImageView;
+    Camera* camera;
+
+    void mainLoop() {
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+            drawFrame();
+        }
+
+        vkDeviceWaitIdle(device);
+    }
 
     void initWindow() {
+        // initialize camera
+		camera = Camera::create();
+
         glfwInit();
 
         // create and define window
@@ -329,7 +364,6 @@ private:
 
         return extensions;
     }
-
 
     void setupDebugMessenger() {  
         if (!enableValidationLayers) return;
@@ -1740,7 +1774,6 @@ private:
         depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
     }
 
-
     VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
         for (VkFormat format : candidates) {
             // foreach able canidate, return the one expected
@@ -1872,16 +1905,9 @@ private:
         colorImageView = createImageView(colorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     }
 
-    void mainLoop() {
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
-            drawFrame();
-        }
-        
-        vkDeviceWaitIdle(device);
-    }
-
     void cleanup() {
+        Camera::destroy(camera);
+
         cleanupSwapChain();
 
         vkDestroySampler(device, textureSampler, nullptr);
@@ -1926,11 +1952,7 @@ private:
     }
 
     // static functions:
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,      // Diagnostic message
-        VkDebugUtilsMessageTypeFlagsEXT messageType,                 // Informational message like the creation of a resource
-        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,   // Message about behavior that is not necessarily an error, but very likely a bug in your application
-        void* pUserData) {                                           // Message about behavior that is invalid and may cause crashes
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity/* Diagnostic message*/, VkDebugUtilsMessageTypeFlagsEXT messageType /*Informational message like the creation of a resource*/, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData /* Message about behavior that is not necessarily an error, but very likely a bug in your application*/, void* pUserData /*Message about behavior that is invalid and may cause crashes*/) {
 
         std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
         return VK_FALSE;
@@ -1955,13 +1977,13 @@ private:
     }
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
     }
 };
 
 int main() {
-    HelloTriangleApplication app;
+    App app;
 
     try {
         app.run();
