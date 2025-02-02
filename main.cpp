@@ -29,6 +29,10 @@
 #include <array>
 #include <unordered_map>
 
+#define vec4 glm::vec4
+#define vec3 glm::vec3
+#define vec2 glm::vec2
+
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
@@ -58,9 +62,9 @@ struct SwapChainSupportDetails {
 };
 
 struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
+    vec3 pos;
+    vec3 color;
+    vec2 texCoord;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription bindingDescription{};
@@ -101,31 +105,31 @@ struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
 
-    bool isComplete() {
+    bool isComplete() const {
         return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
-struct Camera {
-    glm::vec3 pos;
-    glm::vec3 front;
-    glm::vec3 up;
-    float yaw, pitch;
+const vec3 START_POS = vec3(0.f, 0.f, 3.f);
+const vec3 START_FRONT = vec3(0.f, 0.f, -1.f);
+const vec3 START_UP = vec3(0.f, 1.f, 0.f);
+const float START_YAW = -90.f;
+const float START_PITCH = 0.f;
 
-    Camera(glm::vec3 startPos) {
-        pos = startPos;
-        front = glm::vec3(0.0f, 0.0f, -1.0f);
-        up = glm::vec3(0.0f, 1.0f, 0.0f);
-        yaw = -90.0f;
-        pitch = 0.0f;
-    }
+struct Camera {
+    vec3 pos;
+    vec3 front;
+	vec3 up;
+	float yaw, pitch;
+
+	Camera(vec3 p, vec3 f, vec3 u, float y, float pt) : pos(p), front(f), up(u), yaw(y), pitch(pt) { }
 
     glm::mat4 getViewMatrix() {
         return glm::lookAt(pos, pos + front, up);
     }
 
     static Camera* create() {
-		return new Camera(glm::vec3(0.0f, 0.0f, 3.0f));
+        return new Camera(START_POS, START_FRONT, START_UP, START_YAW, START_PITCH);
 	}
 
     static void destroy(Camera* cam) {
@@ -142,7 +146,7 @@ const bool enableValidationLayers = true;
 namespace std {
     template<> struct hash<Vertex> {
         size_t operator()(Vertex const& vertex) const {
-            return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.texCoord) << 1);
+            return ((hash<vec3>()(vertex.pos) ^ (hash<vec3>()(vertex.color) << 1)) >> 1) ^ (hash<vec2>()(vertex.texCoord) << 1);
         }
     };
 }
@@ -236,6 +240,7 @@ private:
     void initWindow() {
         // initialize camera
 		camera = Camera::create();
+		printf("Camera initialized %f %f %f\n", camera->pos.x, camera->pos.y, camera->pos.z);
 
         glfwInit();
 
@@ -244,6 +249,9 @@ private:
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
         
         window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanEngine", nullptr, nullptr);
+
+        // hide cursor
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
 
         glfwSetWindowUserPointer(window, this);
         glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
@@ -1413,25 +1421,20 @@ private:
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
-        // calculate the time in seconds since rendering has started with floating point accuracy.
-        static auto startTime = std::chrono::high_resolution_clock::now();
-
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-		// define model, view, and projection matrices
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+        ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), vec3(0.0f, 0.0f, 1.0f));
 
-		// set perspective projection to 45 degrees with vertical field of view
-		// GLM was originally designed for OpenGL, where Y is flipped. Use negative scale factor to flip Y coordinates so image isn't upside down
+        // Use the camera's position and direction for the view matrix
+        ubo.view = glm::lookAt(camera->pos, camera->pos + camera->front, camera->up);
+
+        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 100.0f);
+
+        // Fix the Y-flipping for Vulkan
         ubo.proj[1][1] *= -1;
 
-		// copy data to buffer
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
     }
+
 
     void cleanupUniformBuffers() {
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
