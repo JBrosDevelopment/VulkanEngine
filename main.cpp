@@ -110,26 +110,25 @@ struct QueueFamilyIndices {
     }
 };
 
-const vec3 START_POS = vec3(0.f, 0.f, 3.f);
-const vec3 START_FRONT = vec3(0.f, 0.f, -1.f);
-const vec3 START_UP = vec3(0.f, 1.f, 0.f);
-const float START_YAW = -90.f;
-const float START_PITCH = 0.f;
-
 struct Camera {
-    vec3 pos;
-    vec3 front;
-	vec3 up;
-	float yaw, pitch;
+    vec3 pos = vec3(0.f, 0.f, 3.f);
+    vec3 front = vec3(0.f, 0.f, -1.f);
+	vec3 up = vec3(0.f, 1.f, 0.f);
+    float yaw = -90.0f;
+    float pitch = 0.0f;
+    float fov = 45.0f;
+    float nearClip = .005f;
+    float farClip = 100.0f;
 
 	Camera(vec3 p, vec3 f, vec3 u, float y, float pt) : pos(p), front(f), up(u), yaw(y), pitch(pt) { }
+    Camera() {}
 
-    glm::mat4 getViewMatrix() {
+    glm::mat4 getViewMatrix() const {
         return glm::lookAt(pos, pos + front, up);
     }
 
     static Camera* create() {
-        return new Camera(START_POS, START_FRONT, START_UP, START_YAW, START_PITCH);
+        return new Camera();
 	}
 
     static void destroy(Camera* cam) {
@@ -167,6 +166,8 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
         func(instance, debugMessenger, pAllocator);
     }
 }
+
+#include "Object.h"
 
 class App {
 public:
@@ -227,9 +228,12 @@ private:
     VkDeviceMemory colorImageMemory;
     VkImageView colorImageView;
     Camera* camera;
+    CameraObject* cameraObject;
+    std::vector<Object*> objects;
 
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
+            cameraObject->update(window);
             glfwPollEvents();
             drawFrame();
         }
@@ -239,8 +243,9 @@ private:
 
     void initWindow() {
         // initialize camera
-		camera = Camera::create();
-		printf("Camera initialized %f %f %f\n", camera->pos.x, camera->pos.y, camera->pos.z);
+	    camera = Camera::create();
+        cameraObject = CameraObject::create(camera);
+        objects.push_back(cameraObject);
 
         glfwInit();
 
@@ -1422,12 +1427,12 @@ private:
 
     void updateUniformBuffer(uint32_t currentImage) {
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = glm::mat4(1.0f); 
 
         // Use the camera's position and direction for the view matrix
         ubo.view = glm::lookAt(camera->pos, camera->pos + camera->front, camera->up);
 
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 100.0f);
+        ubo.proj = glm::perspective(glm::radians(camera->fov), swapChainExtent.width / (float)swapChainExtent.height, camera->nearClip, camera->farClip);
 
         // Fix the Y-flipping for Vulkan
         ubo.proj[1][1] *= -1;
@@ -1910,6 +1915,10 @@ private:
 
     void cleanup() {
         Camera::destroy(camera);
+        for (Object* object : objects) {
+            free(object);
+        }
+
 
         cleanupSwapChain();
 
